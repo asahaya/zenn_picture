@@ -5,9 +5,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:zenn_umatora_book_firebase/model/photo.dart';
+import 'package:zenn_umatora_book_firebase/repository/photo_repository.dart';
 
 import 'photo_view_screen.dart';
-import 'sign_in_screen.dart';
+import '../sign_in_screen.dart';
 
 class PhotoListScreen extends StatefulWidget {
   const PhotoListScreen({Key? key}) : super(key: key);
@@ -46,11 +48,8 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('users/${user.uid}/photos')
-              .orderBy('createdAt', descending: true)
-              .snapshots(),
+      body: StreamBuilder<List<Photo>>(
+          stream: PhotoRepository(user).getPhotoList(),
           builder: (context, snapshot) {
             // Cloud Firestoreからデータを取得中の場合
             if (snapshot.hasData == false) {
@@ -59,34 +58,22 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
               );
             }
             // Cloud Firestoreからデータを取得完了した場合
-            final QuerySnapshot query = snapshot.data!;
-            //画像のURL一覧を作成
-            final List<String> imageList =
-                query.docs.map((doc) => doc.get('imageURL') as String).toList();
-
+            // URL一覧ではなくモデル一覧が取得できる
+            final List<Photo> photoList = snapshot.data!;
             return PageView(
               controller: _controller,
-              //表示がきりかわったとき
-              onPageChanged: (int index) {
-                _onPageChanged(index);
-              },
+              onPageChanged: (int index) => _onPageChanged(index),
               children: [
                 //「全ての画像」を表示する部分
-
-                //「全ての画像」を表示する部分
                 PhotoGridView(
-                  // コールバックを設定しタップした画像のURLを受け取る
-                  imageList: imageList,
-                  onTap: (imageURL) => _onTapPhoto(
-                    imageURL,
-                    imageList,
-                  ),
+                  // 処理を行う際はモデルを受け渡す
+                  photoList: photoList,
+                  onTap: (photo) => _onTapPhoto(photo, photoList),
                 ),
                 //「お気に入り登録した画像」を表示する部分
                 PhotoGridView(
-                  // コールバックを設定しタップした画像のURLを受け取る
-                  imageList: imageList,
-                  onTap: (imageURL) => _onTapPhoto(imageURL, imageList),
+                  photoList: photoList,
+                  onTap: (photo) => _onTapPhoto(photo, photoList),
                 ),
               ],
             );
@@ -148,12 +135,14 @@ class _PhotoListScreenState extends State<PhotoListScreen> {
     });
   }
 
-  void _onTapPhoto(String imageURL, List<String> imageList) {
+  void _onTapPhoto(Photo photo, List<Photo> photoList) {
     // 最初に表示する画像のURLを指定して、画像詳細画面に切り替える
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            PhotoViewScreen(imageURL: imageURL, imageList: imageList),
+        builder: (_) => PhotoViewScreen(
+          photo: photo,
+          photoList: photoList,
+        ),
       ),
     );
   }
@@ -216,13 +205,13 @@ class PhotoGridView extends StatelessWidget {
   const PhotoGridView({
     Key? key,
     required this.onTap,
-    required this.imageList,
+    required this.photoList,
   }) : super(key: key);
 
   //ここ後で調べる
   // コールバックからタップされた画像のURLを受け渡す
-  final void Function(String imageURL) onTap;
-  final List<String> imageList;
+  final List<Photo> photoList;
+  final Function(Photo photo) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -238,7 +227,7 @@ class PhotoGridView extends StatelessWidget {
         // 全体の余白
         padding: const EdgeInsets.all(8),
         // 画像一覧
-        children: imageList.map((String imageURL) {
+        children: photoList.map((Photo photo) {
           return Stack(
             children: [
               SizedBox(
@@ -247,10 +236,10 @@ class PhotoGridView extends StatelessWidget {
                 // Widgetをタップ可能にする
                 child: InkWell(
                   // タップしたらコールバックを実行する
-                  onTap: () => onTap(imageURL),
+                  onTap: () => onTap(photo),
                   // URLを指定して画像を表示
                   child: Image.network(
-                    imageURL,
+                    photo.imageURL,
                     // 画像の表示の仕方を調整できる
                     //  比率は維持しつつ余白が出ないようにするので cover を指定
                     //  https://api.flutter.dev/flutter/painting/BoxFit-class.html
